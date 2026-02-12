@@ -1,5 +1,13 @@
 import { Recipe, SocialQueueItem, PinterestBoardMap } from './types';
 
+// Helper to get a date relative to today
+const getRelativeDate = (daysOffset: number, hours: number = 10) => {
+  const d = new Date();
+  d.setDate(d.getDate() + daysOffset);
+  d.setHours(hours, 0, 0, 0);
+  return d.toISOString();
+};
+
 export const MOCK_RECIPES: Recipe[] = [
   {
     id: 'r-1',
@@ -60,8 +68,8 @@ export const MOCK_QUEUE: SocialQueueItem[] = [
     pin_description: 'Un dîner prêt en 20 minutes qui a du punch ! #CuisineThai #Poulet',
     board_slug: 'recettes-thai',
     destination_url: 'https://nutrizen.app/recipe/thai-basil-chicken?utm_source=pinterest',
-    utm_stats: { clicks: 1240, impressions: 45000, saves: 320 },
-    published_at: '2023-10-10T14:00:00Z'
+    utm_stats: { clicks: 124, impressions: 4500, saves: 32 },
+    published_at: getRelativeDate(-1, 14) // Yesterday
   },
   {
     id: 'q-2',
@@ -75,7 +83,7 @@ export const MOCK_QUEUE: SocialQueueItem[] = [
     board_slug: 'salades-sante',
     destination_url: 'https://nutrizen.app/recipe/med-quinoa?utm_source=pinterest',
     utm_stats: { clicks: 0, impressions: 0, saves: 0 },
-    scheduled_at: '2023-10-28T09:00:00Z'
+    scheduled_at: getRelativeDate(2, 9) // In 2 days
   },
   {
     id: 'q-3',
@@ -89,6 +97,20 @@ export const MOCK_QUEUE: SocialQueueItem[] = [
     board_slug: 'diner-italien',
     destination_url: 'https://nutrizen.app/recipe/mushroom-risotto?utm_source=pinterest',
     utm_stats: { clicks: 0, impressions: 0, saves: 0 },
+  },
+  {
+    id: 'q-5',
+    recipe_id: 'r-1',
+    recipe_title: 'Poulet Basilic Thaï Épicé (Republish)',
+    image_path: 'https://picsum.photos/400/600?random=1',
+    platform: 'Pinterest',
+    status: 'posted',
+    pin_title: 'Diner Rapide: Poulet Thaï',
+    pin_description: 'Recette express.',
+    board_slug: 'recettes-rapides',
+    destination_url: 'https://nutrizen.app/recipe/thai-basil-chicken?utm_source=pinterest',
+    utm_stats: { clicks: 54, impressions: 2100, saves: 10 },
+    published_at: getRelativeDate(-3, 11) // 3 days ago
   },
   {
     id: 'q-4',

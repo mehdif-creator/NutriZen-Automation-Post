@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Recipe, SocialQueueItem, PinterestBoardMap, AppSettings, DashboardStats } from '../types';
 import { dbService } from '../services/mockSupabase';
+import { pinService } from '../services/pinPublishingService';
 
 interface AppState {
   // State
@@ -13,17 +14,21 @@ interface AppState {
   // Actions
   fetchInitialData: () => Promise<void>;
   
+  // Recipe Actions
+  addRecipe: (recipe: Omit<Recipe, 'id' | 'created_at'>) => Promise<void>;
+
+  // Queue Actions
   addToQueue: (recipe: Recipe, platform?: string) => Promise<void>;
   removeFromQueue: (id: string) => Promise<void>;
-  updateQueueStatus: (id: string, status: SocialQueueItem['status']) => Promise<void>;
+  updateQueueItem: (id: string, updates: Partial<SocialQueueItem>) => Promise<void>;
+  retryPublishItem: (id: string) => Promise<void>;
   
+  // Board Actions
   addBoard: (board: Omit<PinterestBoardMap, 'id'>) => Promise<void>;
   toggleBoardActive: (id: string, isActive: boolean) => Promise<void>;
   
+  // Settings Actions
   saveSettings: (settings: AppSettings) => Promise<void>;
-  
-  // Computed (Selectors logic helper)
-  getStats: () => DashboardStats;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -46,6 +51,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error("Erreur chargement données:", e);
       set({ loading: false });
+    }
+  },
+
+  addRecipe: async (recipe) => {
+    try {
+        const newRecipe = await dbService.addRecipe(recipe);
+        set(state => ({ recipes: [newRecipe, ...state.recipes] }));
+    } catch (e) {
+        console.error("Error adding recipe", e);
+        throw e;
     }
   },
 
@@ -82,17 +97,55 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  updateQueueStatus: async (id: string, status) => {
+  updateQueueItem: async (id, updates) => {
     try {
        // Optimistic update
        set(state => ({
-         queue: state.queue.map(i => i.id === id ? { ...i, status } : i)
+         queue: state.queue.map(i => i.id === id ? { ...i, ...updates } : i)
        }));
-       await dbService.updateQueueStatus(id, status);
+       // Persistence
+       await dbService.updateQueueItem(id, updates);
     } catch (e) {
-        // Revert on error? For now, just log
-        console.error("Erreur mise à jour statut:", e);
+        // Revert on error? For now, log and throw
+        console.error("Erreur mise à jour item:", e);
+        // Force refresh from server to ensure consistency on error
+        const serverQueue = await dbService.getQueue();
+        set({ queue: serverQueue });
+        throw e;
     }
+  },
+
+  retryPublishItem: async (id) => {
+      const item = get().queue.find(i => i.id === id);
+      if (!item) return;
+
+      // Set to pending immediately in UI
+      set(state => ({
+         queue: state.queue.map(i => i.id === id ? { ...i, status: 'pending', error_message: undefined } : i)
+      }));
+
+      try {
+          // 1. Call Service (Handles API, returns new state props)
+          const resultUpdates = await pinService.publishPin(item);
+          
+          // 2. Persist Result to DB
+          const updatedItem = await dbService.updateQueueItem(id, resultUpdates);
+
+          // 3. Update Store with Final DB State
+          set(state => ({
+              queue: state.queue.map(i => i.id === id ? updatedItem : i)
+          }));
+
+      } catch (e: any) {
+          // If service threw an unexpected error (not caught in its own retry loop)
+          const errorUpdate = { status: 'error' as const, error_message: e.message || 'Unknown error' };
+          await dbService.updateQueueItem(id, errorUpdate);
+          
+          set(state => ({
+              queue: state.queue.map(i => i.id === id ? { ...i, ...errorUpdate } : i)
+          }));
+          throw e;
+      }
   },
 
   addBoard: async (boardData) => {
@@ -107,7 +160,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleBoardActive: async (id, isActive) => {
     try {
-      // Optimistic
       set(state => ({
         boards: state.boards.map(b => b.id === id ? { ...b, is_active: isActive } : b)
       }));
@@ -126,16 +178,4 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw e;
     }
   },
-
-  getStats: () => {
-    const { queue } = get();
-    return {
-      totalPins: queue.length,
-      published: queue.filter(i => i.status === 'posted').length,
-      scheduled: queue.filter(i => i.status === 'scheduled').length,
-      errors: queue.filter(i => i.status === 'error').length,
-      totalClicks: queue.reduce((acc, curr) => acc + curr.utm_stats.clicks, 0),
-      totalImpressions: queue.reduce((acc, curr) => acc + curr.utm_stats.impressions, 0),
-    };
-  }
 }));

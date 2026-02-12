@@ -1,4 +1,10 @@
 export type Platform = 'Pinterest' | 'Instagram' | 'TikTok';
+export const PLATFORMS: Platform[] = ['Pinterest', 'Instagram', 'TikTok'];
+
+export function isValidPlatform(p: string): p is Platform {
+  return PLATFORMS.includes(p as Platform);
+}
+
 export type QueueStatus = 'pending' | 'rendered' | 'scheduled' | 'posted' | 'error';
 
 export interface Recipe {

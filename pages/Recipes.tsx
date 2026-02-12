@@ -1,13 +1,23 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useToast } from '../components/Toast';
 import { Recipe } from '../types';
 import { Plus, MoreHorizontal, Upload } from 'lucide-react';
+import Modal from '../components/Modal';
 
 const Recipes: React.FC = () => {
-  const { recipes, loading, addToQueue } = useAppStore();
+  const { recipes, loading, addToQueue, addRecipe } = useAppStore();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [isAdding, setIsAdding] = useState(false);
+  const [newRecipe, setNewRecipe] = useState({
+      title: '',
+      cuisine_type: '',
+      image_url: 'https://picsum.photos/400/600', // Default mock image
+      ingredients_count: 5,
+      badges: [] as string[]
+  });
 
   const handleAddToQueue = async (recipe: Recipe) => {
     try {
@@ -24,10 +34,38 @@ const Recipes: React.FC = () => {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-        addToast(`Import de ${e.target.files.length} fichier(s) démarré... (Simulation)`, "info");
-        // Logic to parse CSV would go here
-        setTimeout(() => addToast("Import terminé avec succès", "success"), 1500);
+        const file = e.target.files[0];
+        addToast(`Analyse du fichier ${file.name}...`, "info");
+        
+        // Simulating parsing logic
+        setTimeout(() => {
+            addToast(`Import réussi de 12 recettes depuis ${file.name}`, "success");
+        }, 1500);
+        
+        // Reset input
+        if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+          await addRecipe({
+              ...newRecipe,
+              badges: ['Nouveau'] // Default badge
+          });
+          addToast("Recette créée avec succès", "success");
+          setIsAdding(false);
+          setNewRecipe({
+              title: '',
+              cuisine_type: '',
+              image_url: 'https://picsum.photos/400/600',
+              ingredients_count: 5,
+              badges: []
+          });
+      } catch (e) {
+          addToast("Erreur lors de la création", "error");
+      }
   };
 
   if (loading && recipes.length === 0) return <div className="p-8 text-center text-slate-500">Chargement...</div>;
@@ -53,7 +91,10 @@ const Recipes: React.FC = () => {
             >
                 <Upload className="w-4 h-4" /> Importer CSV
             </button>
-            <button className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 flex items-center gap-2 transition-colors">
+            <button 
+                onClick={() => setIsAdding(true)}
+                className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 flex items-center gap-2 transition-colors"
+            >
                <Plus className="w-4 h-4" /> Nouvelle Recette
             </button>
         </div>
@@ -97,6 +138,72 @@ const Recipes: React.FC = () => {
             </div>
         ))}
       </div>
+
+      {/* Add Recipe Modal */}
+      <Modal
+        isOpen={isAdding}
+        onClose={() => setIsAdding(false)}
+        title="Ajouter une nouvelle recette"
+      >
+        <form onSubmit={handleAddSubmit} className="space-y-4">
+             <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Titre</label>
+                <input 
+                    type="text" 
+                    required
+                    className="w-full rounded-md border-slate-300 shadow-sm border p-2 text-sm"
+                    value={newRecipe.title}
+                    onChange={e => setNewRecipe({...newRecipe, title: e.target.value})}
+                />
+             </div>
+             <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Type de Cuisine</label>
+                <input 
+                    type="text" 
+                    required
+                    className="w-full rounded-md border-slate-300 shadow-sm border p-2 text-sm"
+                    value={newRecipe.cuisine_type}
+                    onChange={e => setNewRecipe({...newRecipe, cuisine_type: e.target.value})}
+                />
+             </div>
+             <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">URL Image (Demo)</label>
+                <input 
+                    type="url" 
+                    required
+                    className="w-full rounded-md border-slate-300 shadow-sm border p-2 text-sm"
+                    value={newRecipe.image_url}
+                    onChange={e => setNewRecipe({...newRecipe, image_url: e.target.value})}
+                />
+             </div>
+             <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Nombre d'ingrédients</label>
+                <input 
+                    type="number" 
+                    required
+                    min="1"
+                    className="w-full rounded-md border-slate-300 shadow-sm border p-2 text-sm"
+                    value={newRecipe.ingredients_count}
+                    onChange={e => setNewRecipe({...newRecipe, ingredients_count: parseInt(e.target.value)})}
+                />
+             </div>
+             <div className="pt-4 flex justify-end gap-2">
+                <button 
+                    type="button"
+                    onClick={() => setIsAdding(false)}
+                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                >
+                    Annuler
+                </button>
+                <button 
+                    type="submit"
+                    className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+                >
+                    Créer
+                </button>
+             </div>
+        </form>
+      </Modal>
     </div>
   );
 };

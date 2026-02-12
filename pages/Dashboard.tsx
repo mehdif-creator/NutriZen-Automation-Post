@@ -1,19 +1,35 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import * as ReactRouterDOM from 'react-router-dom';
 import { Pin, Eye, MousePointer, AlertCircle, Clock } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import { useAppStore } from '../store/useAppStore';
 import { useToast } from '../components/Toast';
 
-const Dashboard: React.FC = () => {
-  const { queue, loading, getStats } = useAppStore();
-  const { addToast } = useToast();
-  const stats = getStats();
+const { useNavigate } = ReactRouterDOM;
 
-  // Generate dynamic chart data for the last 7 days
+const Dashboard: React.FC = () => {
+  const { queue, loading } = useAppStore();
+  const { addToast } = useToast();
+  const navigate = useNavigate();
+
+  // Calculate stats dynamically from current store state
+  const stats = useMemo(() => {
+    return {
+        totalPins: queue.length,
+        published: queue.filter(i => i.status === 'posted').length,
+        scheduled: queue.filter(i => i.status === 'scheduled').length,
+        errors: queue.filter(i => i.status === 'error').length,
+        totalClicks: queue.reduce((acc, curr) => acc + curr.utm_stats.clicks, 0),
+        totalImpressions: queue.reduce((acc, curr) => acc + curr.utm_stats.impressions, 0),
+    };
+  }, [queue]);
+
+  // Generate dynamic chart data for the last 7 days based on ACTUAL queue data
   const chartData = useMemo(() => {
     const days = [];
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
@@ -21,23 +37,20 @@ const Dashboard: React.FC = () => {
       const dateStr = d.toISOString().split('T')[0];
       const dayName = d.toLocaleDateString('fr-FR', { weekday: 'short' });
       
-      // Aggregate stats for this day from queue items (mocking impression logic based on publish date)
-      // In a real app, we would query an 'analytics' table. Here we estimate based on queue items.
+      // Find items published or scheduled on this day
       const dayItems = queue.filter(item => {
-        if (!item.published_at) return false;
-        return item.published_at.startsWith(dateStr);
+        const targetDate = item.published_at || item.scheduled_at;
+        return targetDate && targetDate.startsWith(dateStr);
       });
 
-      // Adding some randomness to mock historical data if queue is small, 
-      // ensuring the chart isn't empty for the demo.
-      const baseImpressions = dayItems.length * 1000; 
-      const baseClicks = dayItems.length * 50;
+      const dayImpressions = dayItems.reduce((acc, curr) => acc + curr.utm_stats.impressions, 0);
+      const dayClicks = dayItems.reduce((acc, curr) => acc + curr.utm_stats.clicks, 0);
 
       days.push({
         name: dayName,
         date: dateStr,
-        impressions: baseImpressions + Math.floor(Math.random() * 500), // Noise for demo
-        clicks: baseClicks + Math.floor(Math.random() * 50)
+        impressions: dayImpressions,
+        clicks: dayClicks
       });
     }
     return days;
@@ -47,7 +60,7 @@ const Dashboard: React.FC = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(queue, null, 2));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href",     dataStr);
-    downloadAnchorNode.setAttribute("download", "nutrizen_report.json");
+    downloadAnchorNode.setAttribute("download", `nutrizen_report_${new Date().toISOString().split('T')[0]}.json`);
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
@@ -71,7 +84,7 @@ const Dashboard: React.FC = () => {
                 Exporter Rapport
             </button>
             <button 
-                onClick={() => window.location.hash = '#/recipes'}
+                onClick={() => navigate('/recipes')}
                 className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 shadow-sm transition-colors"
             >
                 + Nouveau Pin

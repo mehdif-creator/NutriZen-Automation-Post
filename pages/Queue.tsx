@@ -1,21 +1,25 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useToast } from '../components/Toast';
-import { pinService } from '../services/pinPublishingService';
 import { Filter, Calendar, ExternalLink, RefreshCw, Trash2, Edit, Loader2 } from 'lucide-react';
 import { SocialQueueItem } from '../types';
+import Modal from '../components/Modal';
 
 const Queue: React.FC = () => {
-  const { queue, removeFromQueue, updateQueueStatus } = useAppStore();
+  const { queue, removeFromQueue, retryPublishItem, updateQueueItem } = useAppStore();
   const { addToast } = useToast();
+  
   const [filter, setFilter] = useState<string>('all');
   const [processingId, setProcessingId] = useState<string | null>(null);
+  
+  // Modal states
+  const [itemToDelete, setItemToDelete] = useState<SocialQueueItem | null>(null);
+  const [itemToEdit, setItemToEdit] = useState<SocialQueueItem | null>(null);
 
   const handleRetry = async (item: SocialQueueItem) => {
     setProcessingId(item.id);
     try {
-        await updateQueueStatus(item.id, 'pending'); // Reset to pending
-        await pinService.publishPin(item); // Try publishing
+        await retryPublishItem(item.id);
         addToast("Publication réussie !", "success");
     } catch (error: any) {
         addToast(`Erreur de publication: ${error.message}`, "error");
@@ -24,15 +28,33 @@ const Queue: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer cet élément de la file ?")) {
-        try {
-            await removeFromQueue(id);
-            addToast("Élément supprimé", "success");
-        } catch (e) {
-            addToast("Erreur lors de la suppression", "error");
-        }
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
+    try {
+        await removeFromQueue(itemToDelete.id);
+        addToast("Élément supprimé", "success");
+    } catch (e) {
+        addToast("Erreur lors de la suppression", "error");
+    } finally {
+        setItemToDelete(null);
     }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!itemToEdit) return;
+      try {
+          await updateQueueItem(itemToEdit.id, {
+              pin_title: itemToEdit.pin_title,
+              pin_description: itemToEdit.pin_description,
+              scheduled_at: itemToEdit.scheduled_at,
+              destination_url: itemToEdit.destination_url
+          });
+          addToast("Modifications enregistrées", "success");
+          setItemToEdit(null);
+      } catch (e) {
+          addToast("Erreur lors de la modification", "error");
+      }
   };
 
   const filteredItems = filter === 'all' 
@@ -166,11 +188,15 @@ const Queue: React.FC = () => {
                                                     <ExternalLink className="w-4 h-4" />
                                                 </a>
                                             )}
-                                            <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors" title="Modifier">
+                                            <button 
+                                                onClick={() => setItemToEdit(item)}
+                                                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors" 
+                                                title="Modifier"
+                                            >
                                                 <Edit className="w-4 h-4" />
                                             </button>
                                             <button 
-                                                onClick={() => handleDelete(item.id)}
+                                                onClick={() => setItemToDelete(item)}
                                                 className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                                 title="Supprimer"
                                             >
@@ -196,6 +222,98 @@ const Queue: React.FC = () => {
             )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <Modal 
+        isOpen={!!itemToDelete} 
+        onClose={() => setItemToDelete(null)}
+        title="Confirmer la suppression"
+        footer={
+            <>
+                <button 
+                    onClick={() => setItemToDelete(null)}
+                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                >
+                    Annuler
+                </button>
+                <button 
+                    onClick={confirmDelete}
+                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+                >
+                    Supprimer
+                </button>
+            </>
+        }
+      >
+        <p className="text-slate-600">
+            Êtes-vous sûr de vouloir supprimer <strong>{itemToDelete?.pin_title}</strong> de la file d'attente ? 
+            Cette action est irréversible.
+        </p>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal
+         isOpen={!!itemToEdit}
+         onClose={() => setItemToEdit(null)}
+         title="Modifier le Pin"
+      >
+        <form id="edit-form" onSubmit={handleEditSubmit} className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Titre du Pin</label>
+                <input 
+                    type="text" 
+                    required
+                    className="w-full rounded-md border-slate-300 shadow-sm border p-2 text-sm"
+                    value={itemToEdit?.pin_title || ''}
+                    onChange={(e) => setItemToEdit(prev => prev ? {...prev, pin_title: e.target.value} : null)}
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                <textarea 
+                    rows={3}
+                    className="w-full rounded-md border-slate-300 shadow-sm border p-2 text-sm"
+                    value={itemToEdit?.pin_description || ''}
+                    onChange={(e) => setItemToEdit(prev => prev ? {...prev, pin_description: e.target.value} : null)}
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">URL de destination</label>
+                <input 
+                    type="url" 
+                    required
+                    className="w-full rounded-md border-slate-300 shadow-sm border p-2 text-sm"
+                    value={itemToEdit?.destination_url || ''}
+                    onChange={(e) => setItemToEdit(prev => prev ? {...prev, destination_url: e.target.value} : null)}
+                />
+            </div>
+             <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Date de publication prévue</label>
+                <input 
+                    type="datetime-local" 
+                    className="w-full rounded-md border-slate-300 shadow-sm border p-2 text-sm"
+                    value={itemToEdit?.scheduled_at?.slice(0, 16) || ''}
+                    onChange={(e) => setItemToEdit(prev => prev ? {...prev, scheduled_at: new Date(e.target.value).toISOString()} : null)}
+                />
+            </div>
+            
+            <div className="pt-4 flex justify-end gap-2">
+                <button 
+                    type="button"
+                    onClick={() => setItemToEdit(null)}
+                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                >
+                    Annuler
+                </button>
+                <button 
+                    type="submit"
+                    className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+                >
+                    Enregistrer
+                </button>
+            </div>
+        </form>
+      </Modal>
     </div>
   );
 };

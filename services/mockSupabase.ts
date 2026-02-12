@@ -30,6 +30,17 @@ class MockSupabaseService {
     return this.recipes;
   }
 
+  async addRecipe(recipe: Omit<Recipe, 'id' | 'created_at'>): Promise<Recipe> {
+    await delay(300);
+    const newRecipe: Recipe = {
+        ...recipe,
+        id: `r-${Date.now()}`,
+        created_at: new Date().toISOString()
+    };
+    this.recipes = [newRecipe, ...this.recipes];
+    return newRecipe;
+  }
+
   async getQueue(): Promise<SocialQueueItem[]> {
     await delay(300);
     return this.queue;
@@ -68,17 +79,23 @@ class MockSupabaseService {
     this.queue = this.queue.filter(item => item.id !== id);
   }
 
-  async updateQueueStatus(id: string, status: SocialQueueItem['status'], extra?: Partial<SocialQueueItem>): Promise<SocialQueueItem | undefined> {
-    await delay(300);
-    let updatedItem: SocialQueueItem | undefined;
-    this.queue = this.queue.map(item => {
-      if (item.id === id) {
-        updatedItem = { ...item, status, ...extra };
-        return updatedItem;
-      }
-      return item;
-    });
-    return updatedItem;
+  async updateQueueItem(id: string, updates: Partial<SocialQueueItem>): Promise<SocialQueueItem> {
+      await delay(300);
+      let updatedItem: SocialQueueItem | undefined;
+      this.queue = this.queue.map(item => {
+          if (item.id === id) {
+              updatedItem = { ...item, ...updates };
+              return updatedItem;
+          }
+          return item;
+      });
+      if (!updatedItem) throw new Error("Item not found");
+      return updatedItem;
+  }
+
+  // Legacy wrapper for status updates, now routed through updateQueueItem logic internally
+  async updateQueueStatus(id: string, status: SocialQueueItem['status'], extra?: Partial<SocialQueueItem>): Promise<SocialQueueItem> {
+    return this.updateQueueItem(id, { status, ...extra });
   }
 
   async updateBoard(id: string, updates: Partial<PinterestBoardMap>): Promise<void> {
