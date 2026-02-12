@@ -1,30 +1,43 @@
-import React, { useEffect, useState } from 'react';
-import { dbService } from '../services/mockSupabase';
+import React, { useState } from 'react';
+import { useAppStore } from '../store/useAppStore';
+import { useToast } from '../components/Toast';
+import { pinService } from '../services/pinPublishingService';
+import { Filter, Calendar, ExternalLink, RefreshCw, Trash2, Edit, Loader2 } from 'lucide-react';
 import { SocialQueueItem } from '../types';
-import { Filter, Calendar, ExternalLink, RefreshCw, Trash2, Edit } from 'lucide-react';
 
 const Queue: React.FC = () => {
-  const [items, setItems] = useState<SocialQueueItem[]>([]);
+  const { queue, removeFromQueue, updateQueueStatus } = useAppStore();
+  const { addToast } = useToast();
   const [filter, setFilter] = useState<string>('all');
-  
-  useEffect(() => {
-    loadQueue();
-  }, []);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
-  const loadQueue = async () => {
-    const data = await dbService.getQueue();
-    setItems(data);
+  const handleRetry = async (item: SocialQueueItem) => {
+    setProcessingId(item.id);
+    try {
+        await updateQueueStatus(item.id, 'pending'); // Reset to pending
+        await pinService.publishPin(item); // Try publishing
+        addToast("Publication réussie !", "success");
+    } catch (error: any) {
+        addToast(`Erreur de publication: ${error.message}`, "error");
+    } finally {
+        setProcessingId(null);
+    }
   };
 
-  const handleRetry = async (id: string) => {
-    // Optimistic update
-    setItems(items.map(i => i.id === id ? { ...i, status: 'pending' } : i));
-    await dbService.updateQueueStatus(id, 'pending');
+  const handleDelete = async (id: string) => {
+    if (window.confirm("Êtes-vous sûr de vouloir supprimer cet élément de la file ?")) {
+        try {
+            await removeFromQueue(id);
+            addToast("Élément supprimé", "success");
+        } catch (e) {
+            addToast("Erreur lors de la suppression", "error");
+        }
+    }
   };
 
   const filteredItems = filter === 'all' 
-    ? items 
-    : items.filter(item => item.status === filter);
+    ? queue 
+    : queue.filter(item => item.status === filter);
 
   const getStatusColor = (status: string) => {
     switch(status) {
@@ -134,26 +147,37 @@ const Queue: React.FC = () => {
                             </td>
                             <td className="px-6 py-4 text-right">
                                 <div className="flex items-center justify-end gap-2">
-                                    {item.status === 'error' && (
-                                        <button 
-                                            onClick={() => handleRetry(item.id)}
-                                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
-                                            title="Réessayer"
-                                        >
-                                            <RefreshCw className="w-4 h-4" />
-                                        </button>
+                                    {/* Action Buttons */}
+                                    {processingId === item.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                                    ) : (
+                                        <>
+                                            {item.status === 'error' && (
+                                                <button 
+                                                    onClick={() => handleRetry(item)}
+                                                    className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
+                                                    title="Réessayer"
+                                                >
+                                                    <RefreshCw className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                            {item.status === 'posted' && (
+                                                <a href="#" className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors" title="Voir sur Pinterest">
+                                                    <ExternalLink className="w-4 h-4" />
+                                                </a>
+                                            )}
+                                            <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors" title="Modifier">
+                                                <Edit className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDelete(item.id)}
+                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                title="Supprimer"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </>
                                     )}
-                                    {item.status === 'posted' && (
-                                        <a href="#" className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors" title="Voir sur Pinterest">
-                                            <ExternalLink className="w-4 h-4" />
-                                        </a>
-                                    )}
-                                    <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors">
-                                        <Edit className="w-4 h-4" />
-                                    </button>
-                                    <button className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
                                 </div>
                             </td>
                         </tr>

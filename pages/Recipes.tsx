@@ -1,36 +1,36 @@
-import React, { useEffect, useState } from 'react';
-import { dbService } from '../services/mockSupabase';
+import React, { useRef } from 'react';
+import { useAppStore } from '../store/useAppStore';
+import { useToast } from '../components/Toast';
 import { Recipe } from '../types';
-import { Plus, MoreHorizontal } from 'lucide-react';
+import { Plus, MoreHorizontal, Upload } from 'lucide-react';
 
 const Recipes: React.FC = () => {
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetch = async () => {
-      const data = await dbService.getRecipes();
-      setRecipes(data);
-      setLoading(false);
-    };
-    fetch();
-  }, []);
+  const { recipes, loading, addToQueue } = useAppStore();
+  const { addToast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAddToQueue = async (recipe: Recipe) => {
-    await dbService.addToQueue({
-        recipe_id: recipe.id,
-        recipe_title: recipe.title,
-        image_path: recipe.image_url,
-        platform: 'Pinterest',
-        pin_title: recipe.title,
-        pin_description: `Découvrez ce délicieux ${recipe.title}. Recette complète à l'intérieur !`,
-        board_slug: 'general', // Simplified default logic
-        destination_url: `https://nutrizen.app/r/${recipe.id}`
-    });
-    alert(`Ajouté ${recipe.title} à la file d'attente !`);
+    try {
+        await addToQueue(recipe);
+        addToast(`${recipe.title} ajouté à la file d'attente !`, "success");
+    } catch (e) {
+        addToast("Erreur lors de l'ajout à la file.", "error");
+    }
   };
 
-  if (loading) return <div>Chargement...</div>;
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+        addToast(`Import de ${e.target.files.length} fichier(s) démarré... (Simulation)`, "info");
+        // Logic to parse CSV would go here
+        setTimeout(() => addToast("Import terminé avec succès", "success"), 1500);
+    }
+  };
+
+  if (loading && recipes.length === 0) return <div className="p-8 text-center text-slate-500">Chargement...</div>;
 
   return (
     <div className="space-y-6">
@@ -39,9 +39,24 @@ const Recipes: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900">Recettes</h1>
           <p className="text-slate-500">Importées depuis votre base de données NutriZen principale.</p>
         </div>
-        <button className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 flex items-center gap-2">
-           <Plus className="w-4 h-4" /> Importer
-        </button>
+        <div className="flex gap-2">
+            <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept=".csv,.json"
+                onChange={handleFileChange}
+            />
+            <button 
+                onClick={handleImportClick}
+                className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 flex items-center gap-2 transition-colors"
+            >
+                <Upload className="w-4 h-4" /> Importer CSV
+            </button>
+            <button className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 flex items-center gap-2 transition-colors">
+               <Plus className="w-4 h-4" /> Nouvelle Recette
+            </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

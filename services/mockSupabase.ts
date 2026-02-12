@@ -1,13 +1,29 @@
-import { Recipe, SocialQueueItem, PinterestBoardMap } from '../types';
+import { Recipe, SocialQueueItem, PinterestBoardMap, AppSettings } from '../types';
 import { MOCK_RECIPES, MOCK_QUEUE, MOCK_BOARDS } from '../constants';
 
 // Simulating database latency
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const DEFAULT_SETTINGS: AppSettings = {
+  timezone: 'Europe/Paris',
+  language: 'fr',
+  supabaseUrl: '',
+  supabaseKey: '',
+  pinterestAppId: '',
+  pinterestAppSecret: '',
+  pinterestToken: '',
+  cloudinaryName: '',
+  cloudinaryKey: '',
+  cloudinarySecret: '',
+  googleAnalyticsId: '',
+  defaultUtmSource: 'pinterest'
+};
+
 class MockSupabaseService {
   private recipes: Recipe[] = [...MOCK_RECIPES];
   private queue: SocialQueueItem[] = [...MOCK_QUEUE];
   private boards: PinterestBoardMap[] = [...MOCK_BOARDS];
+  private settings: AppSettings = { ...DEFAULT_SETTINGS };
 
   async getRecipes(): Promise<Recipe[]> {
     await delay(300);
@@ -24,6 +40,17 @@ class MockSupabaseService {
     return this.boards;
   }
 
+  async getSettings(): Promise<AppSettings> {
+    await delay(200);
+    return this.settings;
+  }
+
+  async saveSettings(settings: AppSettings): Promise<AppSettings> {
+    await delay(500);
+    this.settings = { ...settings };
+    return this.settings;
+  }
+
   async addToQueue(item: Omit<SocialQueueItem, 'id' | 'status' | 'utm_stats'>): Promise<SocialQueueItem> {
     await delay(500);
     const newItem: SocialQueueItem = {
@@ -36,11 +63,22 @@ class MockSupabaseService {
     return newItem;
   }
 
-  async updateQueueStatus(id: string, status: SocialQueueItem['status'], extra?: Partial<SocialQueueItem>): Promise<void> {
+  async removeFromQueue(id: string): Promise<void> {
     await delay(300);
-    this.queue = this.queue.map(item => 
-      item.id === id ? { ...item, status, ...extra } : item
-    );
+    this.queue = this.queue.filter(item => item.id !== id);
+  }
+
+  async updateQueueStatus(id: string, status: SocialQueueItem['status'], extra?: Partial<SocialQueueItem>): Promise<SocialQueueItem | undefined> {
+    await delay(300);
+    let updatedItem: SocialQueueItem | undefined;
+    this.queue = this.queue.map(item => {
+      if (item.id === id) {
+        updatedItem = { ...item, status, ...extra };
+        return updatedItem;
+      }
+      return item;
+    });
+    return updatedItem;
   }
 
   async updateBoard(id: string, updates: Partial<PinterestBoardMap>): Promise<void> {

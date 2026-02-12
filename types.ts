@@ -49,3 +49,18 @@ export interface DashboardStats {
   totalClicks: number;
   totalImpressions: number;
 }
+
+export interface AppSettings {
+  timezone: string;
+  language: string;
+  supabaseUrl: string;
+  supabaseKey: string; // Encrypted in real app
+  pinterestAppId: string;
+  pinterestAppSecret: string;
+  pinterestToken: string;
+  cloudinaryName: string;
+  cloudinaryKey: string;
+  cloudinarySecret: string;
+  googleAnalyticsId: string;
+  defaultUtmSource: string;
+}

@@ -1,21 +1,45 @@
-import React, { useEffect, useState } from 'react';
-import { dbService } from '../services/mockSupabase';
-import { PinterestBoardMap } from '../types';
-import { Save, Plus, Map, Check } from 'lucide-react';
+import React, { useState } from 'react';
+import { useAppStore } from '../store/useAppStore';
+import { useToast } from '../components/Toast';
+import { Save, Plus, Map, Check, X } from 'lucide-react';
 
 const BoardMapping: React.FC = () => {
-  const [boards, setBoards] = useState<PinterestBoardMap[]>([]);
-  
-  useEffect(() => {
-    const fetch = async () => {
-      setBoards(await dbService.getBoards());
-    };
-    fetch();
-  }, []);
+  const { boards, toggleBoardActive, addBoard } = useAppStore();
+  const { addToast } = useToast();
+  const [isAdding, setIsAdding] = useState(false);
+  const [newBoard, setNewBoard] = useState({
+    cuisine_key: '',
+    board_slug: '',
+    board_name: '',
+    pinterest_board_id: '12345', // Mock default
+    is_active: true
+  });
 
-  const toggleActive = async (id: string, current: boolean) => {
-    setBoards(boards.map(b => b.id === id ? { ...b, is_active: !current } : b));
-    await dbService.updateBoard(id, { is_active: !current });
+  const handleToggle = async (id: string, current: boolean) => {
+    await toggleBoardActive(id, !current);
+    addToast(current ? "Tableau désactivé" : "Tableau activé", "info");
+  };
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBoard.cuisine_key || !newBoard.board_slug) {
+        addToast("Veuillez remplir tous les champs", "error");
+        return;
+    }
+    try {
+        await addBoard(newBoard);
+        addToast("Nouveau mapping ajouté !", "success");
+        setIsAdding(false);
+        setNewBoard({
+            cuisine_key: '',
+            board_slug: '',
+            board_name: '',
+            pinterest_board_id: '12345',
+            is_active: true
+        });
+    } catch(e) {
+        addToast("Erreur lors de l'ajout", "error");
+    }
   };
 
   return (
@@ -31,12 +55,45 @@ const BoardMapping: React.FC = () => {
             <Map className="w-5 h-5 text-emerald-600" />
             Mappings Actifs
           </h2>
-          <button className="flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 transition-colors">
-            <Plus className="w-4 h-4" />
-            Ajouter
+          <button 
+            onClick={() => setIsAdding(!isAdding)}
+            className="flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 transition-colors"
+          >
+            {isAdding ? <X className="w-4 h-4"/> : <Plus className="w-4 h-4" />}
+            {isAdding ? "Annuler" : "Ajouter"}
           </button>
         </div>
         
+        {isAdding && (
+            <div className="p-6 bg-slate-50 border-b border-slate-200 animate-in fade-in slide-in-from-top-4">
+                <form onSubmit={handleAddSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Cuisine / Catégorie</label>
+                        <input 
+                            type="text" 
+                            className="w-full rounded-md border-slate-300 shadow-sm sm:text-sm p-2 border"
+                            placeholder="ex: Vegan"
+                            value={newBoard.cuisine_key}
+                            onChange={e => setNewBoard({...newBoard, cuisine_key: e.target.value})}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Nom du Tableau</label>
+                        <input 
+                            type="text" 
+                            className="w-full rounded-md border-slate-300 shadow-sm sm:text-sm p-2 border"
+                            placeholder="ex: Recettes Vegan"
+                            value={newBoard.board_name}
+                            onChange={e => setNewBoard({...newBoard, board_name: e.target.value, board_slug: e.target.value.toLowerCase().replace(/\s+/g, '-')})}
+                        />
+                    </div>
+                    <button type="submit" className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 shadow-sm">
+                        Confirmer
+                    </button>
+                </form>
+            </div>
+        )}
+
         <div className="divide-y divide-slate-100">
           {boards.map((board) => (
             <div key={board.id} className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -71,7 +128,7 @@ const BoardMapping: React.FC = () => {
               <div className="flex items-center gap-4 pt-4 sm:pt-0 sm:pl-4 sm:border-l border-slate-100">
                 <div className="flex items-center">
                     <button
-                        onClick={() => toggleActive(board.id, board.is_active)}
+                        onClick={() => handleToggle(board.id, board.is_active)}
                         className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
                             board.is_active ? 'bg-emerald-600' : 'bg-slate-200'
                         }`}

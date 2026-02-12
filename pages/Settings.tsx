@@ -1,12 +1,46 @@
-import React, { useState } from 'react';
-import { Save, Eye, EyeOff, Database, Globe, BarChart2, Server, Lock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useAppStore } from '../store/useAppStore';
+import { useToast } from '../components/Toast';
+import { Save, Eye, EyeOff, Database, Globe, BarChart2, Server, Loader2 } from 'lucide-react';
+import { AppSettings } from '../types';
 
 const Settings: React.FC = () => {
+  const { settings, saveSettings } = useAppStore();
+  const { addToast } = useToast();
+  
+  const [formData, setFormData] = useState<AppSettings | null>(null);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (settings) {
+        setFormData(settings);
+    }
+  }, [settings]);
 
   const toggleSecret = (key: string) => {
     setShowSecrets(prev => ({ ...prev, [key]: !prev[key] }));
   };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      const { name, value } = e.target;
+      setFormData(prev => prev ? ({ ...prev, [name]: value }) : null);
+  };
+
+  const handleSave = async () => {
+      if (!formData) return;
+      setIsSaving(true);
+      try {
+        await saveSettings(formData);
+        addToast("Paramètres sauvegardés avec succès", "success");
+      } catch (e) {
+        addToast("Erreur lors de la sauvegarde", "error");
+      } finally {
+        setIsSaving(false);
+      }
+  };
+
+  if (!formData) return <div className="p-8 text-center">Chargement des paramètres...</div>;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12">
@@ -27,7 +61,12 @@ const Settings: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Fuseau Horaire</label>
-              <select className="w-full rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm py-2 px-3 border bg-white">
+              <select 
+                name="timezone" 
+                value={formData.timezone} 
+                onChange={handleChange}
+                className="w-full rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm py-2 px-3 border bg-white"
+              >
                 <option value="Europe/Paris">Europe/Paris (UTC+01:00)</option>
                 <option value="America/New_York">New York (UTC-05:00)</option>
                 <option value="UTC">UTC</option>
@@ -35,7 +74,12 @@ const Settings: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Langue de l'app</label>
-              <select className="w-full rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm py-2 px-3 border bg-white">
+              <select 
+                name="language"
+                value={formData.language}
+                onChange={handleChange}
+                className="w-full rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm py-2 px-3 border bg-white"
+              >
                 <option value="fr">Français</option>
                 <option value="en">English</option>
               </select>
@@ -58,7 +102,10 @@ const Settings: React.FC = () => {
             <label className="block text-sm font-medium text-slate-700 mb-1">URL du Projet</label>
             <input 
               type="text" 
-              defaultValue="https://xyzproject.supabase.co" 
+              name="supabaseUrl"
+              value={formData.supabaseUrl}
+              onChange={handleChange}
+              placeholder="https://xyzproject.supabase.co" 
               className="w-full rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm py-2 px-3 border"
             />
           </div>
@@ -67,7 +114,10 @@ const Settings: React.FC = () => {
             <div className="relative">
               <input 
                 type={showSecrets['supabase'] ? "text" : "password"} 
-                defaultValue="eyJhGcioJiu..." 
+                name="supabaseKey"
+                value={formData.supabaseKey}
+                onChange={handleChange}
+                placeholder="eyJhGcioJiu..." 
                 className="w-full rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm py-2 px-3 border pr-10"
               />
               <button 
@@ -101,7 +151,10 @@ const Settings: React.FC = () => {
               <label className="block text-sm font-medium text-slate-700 mb-1">App ID</label>
               <input 
                 type="text" 
-                defaultValue="14567890" 
+                name="pinterestAppId"
+                value={formData.pinterestAppId}
+                onChange={handleChange}
+                placeholder="12345678" 
                 className="w-full rounded-lg border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm py-2 px-3 border"
               />
             </div>
@@ -110,7 +163,10 @@ const Settings: React.FC = () => {
               <div className="relative">
                 <input 
                   type={showSecrets['pinterest'] ? "text" : "password"} 
-                  defaultValue="pinterest_secret_key" 
+                  name="pinterestAppSecret"
+                  value={formData.pinterestAppSecret}
+                  onChange={handleChange}
+                  placeholder="secret..." 
                   className="w-full rounded-lg border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm py-2 px-3 border pr-10"
                 />
                 <button 
@@ -128,11 +184,11 @@ const Settings: React.FC = () => {
                 <input 
                 type="text" 
                 readOnly
-                value="pina_..." 
+                value={formData.pinterestToken || "Non connecté"} 
                 className="flex-1 rounded-lg border-slate-200 bg-slate-50 text-slate-500 shadow-sm sm:text-sm py-2 px-3 border"
                 />
-                 <span className="inline-flex items-center px-3 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
-                    Valide
+                 <span className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-medium ${formData.pinterestToken ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-500'}`}>
+                    {formData.pinterestToken ? 'Valide' : 'Invalide'}
                  </span>
             </div>
           </div>
@@ -151,15 +207,33 @@ const Settings: React.FC = () => {
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Cloud Name</label>
-                    <input type="text" className="w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3 border" />
+                    <input 
+                        type="text" 
+                        name="cloudinaryName"
+                        value={formData.cloudinaryName}
+                        onChange={handleChange}
+                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3 border" 
+                    />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
-                    <input type="text" className="w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3 border" />
+                    <input 
+                        type="text" 
+                        name="cloudinaryKey"
+                        value={formData.cloudinaryKey}
+                        onChange={handleChange}
+                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3 border" 
+                    />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">API Secret</label>
-                    <input type="password" className="w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3 border" />
+                    <input 
+                        type="password" 
+                        name="cloudinarySecret"
+                        value={formData.cloudinarySecret}
+                        onChange={handleChange}
+                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3 border" 
+                    />
                 </div>
              </div>
         </div>
@@ -177,11 +251,25 @@ const Settings: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Google Analytics ID</label>
-                    <input type="text" placeholder="G-XXXXXXXXXX" className="w-full rounded-lg border-slate-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm py-2 px-3 border" />
+                    <input 
+                        type="text" 
+                        name="googleAnalyticsId"
+                        value={formData.googleAnalyticsId}
+                        onChange={handleChange}
+                        placeholder="G-XXXXXXXXXX" 
+                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm py-2 px-3 border" 
+                    />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">UTM Source (Défaut)</label>
-                    <input type="text" defaultValue="pinterest" className="w-full rounded-lg border-slate-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm py-2 px-3 border" />
+                    <input 
+                        type="text" 
+                        name="defaultUtmSource"
+                        value={formData.defaultUtmSource}
+                        onChange={handleChange}
+                        defaultValue="pinterest" 
+                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm py-2 px-3 border" 
+                    />
                 </div>
             </div>
         </div>
@@ -189,12 +277,19 @@ const Settings: React.FC = () => {
 
       {/* Action Buttons */}
       <div className="flex items-center justify-end gap-4 pt-4">
-        <button className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-medium hover:bg-slate-50 transition-colors">
+        <button 
+            onClick={() => setFormData(settings)}
+            className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-medium hover:bg-slate-50 transition-colors"
+        >
             Annuler
         </button>
-        <button className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm">
-            <Save className="w-4 h-4" />
-            Sauvegarder les modifications
+        <button 
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
+        >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4" />}
+            {isSaving ? "Sauvegarde..." : "Sauvegarder les modifications"}
         </button>
       </div>
     </div>
