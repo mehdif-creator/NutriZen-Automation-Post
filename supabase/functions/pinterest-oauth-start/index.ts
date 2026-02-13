@@ -16,18 +16,32 @@ serve(async (req) => {
   try {
     const clientId = Deno.env.get('PINTEREST_CLIENT_ID')
     const redirectUri = Deno.env.get('PINTEREST_REDIRECT_URI')
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    // STUB MODE CHECK
-    if (!clientId || !redirectUri) {
+    // 1. Stub Mode Check
+    if (!clientId || !redirectUri || !supabaseUrl || !supabaseKey) {
         return new Response(
             JSON.stringify({ code: "PINTEREST_NOT_CONFIGURED", message: "Environment variables missing" }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
     }
 
-    const state = crypto.randomUUID()
-    // In a real app, store state in DB here to validate in callback
+    const supabase = createClient(supabaseUrl, supabaseKey)
 
+    // 2. Generate and Store State (CSRF Protection)
+    const state = crypto.randomUUID()
+    
+    // Using oauth_states table to store state server-side
+    const { error: stateError } = await supabase
+        .from('oauth_states')
+        .insert({ state: state })
+    
+    if (stateError) {
+        throw new Error(`Failed to store state: ${stateError.message}`)
+    }
+
+    // 3. Construct Auth URL
     const scope = 'boards:read,pins:read,pins:write'
     const authUrl = `https://www.pinterest.com/oauth/?response_type=code&redirect_uri=${redirectUri}&client_id=${clientId}&scope=${scope}&state=${state}`
 

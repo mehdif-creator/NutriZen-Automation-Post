@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useToast } from '../components/Toast';
-import { Save, Globe, Loader2, Share2, Check, AlertTriangle } from 'lucide-react';
+import { Save, Globe, Loader2, Share2, Check, AlertTriangle, RefreshCw } from 'lucide-react';
 import { AppSettings } from '../types';
 import { supabase } from '../services/supabaseClient';
 
 const Settings: React.FC = () => {
-  const { settings, saveSettings } = useAppStore();
+  const { settings, saveSettings, fetchInitialData } = useAppStore();
   const { addToast } = useToast();
   
   const [formData, setFormData] = useState<AppSettings | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isConnectingPinterest, setIsConnectingPinterest] = useState(false);
   const [pinterestConfigMissing, setPinterestConfigMissing] = useState(false);
+
+  useEffect(() => {
+    fetchInitialData(); // Refresh on mount to get latest connection status from DB
+  }, [fetchInitialData]);
 
   useEffect(() => {
     if (settings) {
@@ -47,19 +51,15 @@ const Settings: React.FC = () => {
         method: 'GET'
       });
       
-      // Handle the Stub Mode / Not Configured error specifically
       if (error) {
           try {
-             // Attempt to parse the body if it exists in the error context
              const body = await error.context?.json(); 
              if (body && body.code === 'PINTEREST_NOT_CONFIGURED') {
                  setPinterestConfigMissing(true);
-                 addToast("Configuration Pinterest manquante", "error");
+                 addToast("Configuration Pinterest manquante (Secrets)", "error");
                  return;
              }
-          } catch (parseError) {
-              // Ignore parse error, proceed to standard error throw
-          }
+          } catch (parseError) {}
           throw error;
       }
       
@@ -70,12 +70,7 @@ const Settings: React.FC = () => {
       }
     } catch (e: any) {
       console.error(e);
-      // Fallback check if the body parsing above failed but message contains hint
-      if (e.message?.includes('PINTEREST_NOT_CONFIGURED')) {
-         setPinterestConfigMissing(true);
-      } else {
-         addToast(`Erreur connexion: ${e.message}`, "error");
-      }
+      addToast(`Erreur connexion: ${e.message}`, "error");
     } finally {
       setIsConnectingPinterest(false);
     }
@@ -144,9 +139,14 @@ const Settings: React.FC = () => {
           </h2>
           <div className="flex items-center gap-2">
             {formData.pinterestConnected ? (
-              <span className="flex items-center gap-1 text-sm font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
-                <Check className="w-3 h-3" /> Connecté
-              </span>
+              <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-sm font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">
+                    <Check className="w-3 h-3" /> Connecté
+                  </span>
+                  <button onClick={() => fetchInitialData()} className="p-1 text-slate-400 hover:text-emerald-600">
+                     <RefreshCw className="w-3 h-3"/>
+                  </button>
+              </div>
             ) : (
               <button 
                 onClick={handleConnectPinterest}
@@ -160,7 +160,6 @@ const Settings: React.FC = () => {
           </div>
         </div>
         
-        {/* Stub Mode Banner */}
         {pinterestConfigMissing && (
             <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mx-6 mt-6">
                 <div className="flex">
@@ -169,9 +168,9 @@ const Settings: React.FC = () => {
                     </div>
                     <div className="ml-3">
                         <p className="text-sm text-amber-700">
-                            <strong>App Pinterest en attente de validation.</strong>
+                            <strong>Secrets Manquants.</strong>
                             <br/>
-                            L'application est en mode "Stub". Veuillez configurer les secrets <code>PINTEREST_CLIENT_ID</code> et <code>PINTEREST_CLIENT_SECRET</code> dans vos Supabase Edge Functions une fois l'approbation reçue.
+                            Veuillez configurer <code>PINTEREST_CLIENT_ID</code> et <code>PINTEREST_REDIRECT_URI</code> dans vos Edge Functions.
                         </p>
                     </div>
                 </div>

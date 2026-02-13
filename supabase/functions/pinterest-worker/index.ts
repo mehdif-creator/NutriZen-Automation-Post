@@ -4,32 +4,33 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 declare const Deno: any;
 
 serve(async (req) => {
-  const supabaseClient = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  )
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  
+  const supabase = createClient(supabaseUrl, supabaseKey)
 
   try {
-    // 1. Dequeue Jobs (Atomic)
-    const { data: jobs, error } = await supabaseClient.rpc('dequeue_pinterest_jobs', { p_limit: 10 })
+    // 1. Dequeue Jobs (Atomic RPC)
+    const { data: jobs, error } = await supabase.rpc('dequeue_pinterest_jobs', { p_limit: 5 })
     
     if (error) throw error
     if (!jobs || jobs.length === 0) {
-        return new Response(JSON.stringify({ message: "No jobs" }), { headers: { 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ message: "No jobs to process" }), { headers: { 'Content-Type': 'application/json' } })
     }
 
     const results = []
 
-    // 2. Process Jobs
+    // 2. Process Batch
     for (const job of jobs) {
         try {
-            // Call the publish function (internal invocation)
-            // Note: In production, you might import the logic directly to save a hop, 
-            // but calling the function ensures consistent environment checks.
-            const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pinterest-publish`, {
+            console.log(`Processing Job ${job.id}...`)
+            
+            // We invoke the publish function using the Service Role Key.
+            // This ensures we can update the DB even if the publish function fails internally.
+            const response = await fetch(`${supabaseUrl}/functions/v1/pinterest-publish`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+                    'Authorization': `Bearer ${supabaseKey}`, // Passing Service Role to bypass Admin check if logic allows
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ queue_id: job.id })
@@ -37,26 +38,33 @@ serve(async (req) => {
 
             const resJson = await response.json()
 
-            // If Stub Mode or Error, we might need to handle it
-            if (resJson.code === 'PINTEREST_NOT_CONFIGURED') {
-                console.error("Stopping worker: Pinterest not configured")
-                // Release the job back to 'rendered' or 'failed' so it's not stuck in 'processing'
-                 await supabaseClient
+            if (!response.ok) {
+                const isConfigError = resJson.code === 'PINTEREST_NOT_CONFIGURED'
+                
+                await supabase
                     .from('social_queue')
-                    .update({ status: 'failed', publish_error: 'Pinterest secrets missing (Stub Mode)' })
+                    .update({ 
+                        status: 'failed', 
+                        publish_error: resJson.error || 'Unknown error',
+                        // If it's a config error, maybe don't unlock immediately or set a long backoff?
+                        // For now, simple fail.
+                    })
                     .eq('id', job.id)
-                break; // Stop processing rest of batch
+                
+                if (isConfigError) {
+                    console.error("Pinterest not configured. Aborting batch.")
+                    break;
+                }
             }
             
-            results.push({ id: job.id, status: response.ok ? 'ok' : 'error', data: resJson })
+            results.push({ id: job.id, status: response.ok ? 'ok' : 'failed', result: resJson })
 
         } catch (e) {
-            console.error(`Job ${job.id} failed`, e)
-            await supabaseClient
+            console.error(`Worker execution failed for ${job.id}`, e)
+            await supabase
                 .from('social_queue')
                 .update({ status: 'failed', publish_error: e.message })
                 .eq('id', job.id)
-            results.push({ id: job.id, error: e.message })
         }
     }
 

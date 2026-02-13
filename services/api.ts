@@ -35,8 +35,6 @@ export const api = {
 
     if (error) throw error;
 
-    // Map potential DB column differences if necessary, 
-    // assuming DB columns match types.ts interfaces (snake_case)
     return data.map((item: any) => ({
       ...item,
       // Ensure UI has a valid image path to display
@@ -120,14 +118,14 @@ export const api = {
       .from('app_settings')
       .select('value')
       .eq('key', 'general_config')
-      .single();
+      .maybeSingle();
     
-    // 2. Get Pinterest Auth Status
+    // 2. Get Pinterest Auth Status (Admin Only Check)
+    // We select only non-sensitive fields to verify existence
     const { data: authData } = await supabase
       .from('pinterest_oauth')
-      .select('expires_at')
-      .eq('account_label', 'default') // Assuming single account
-      .limit(1)
+      .select('expires_at, account_label')
+      .eq('account_label', 'default')
       .maybeSingle();
 
     const baseSettings = settingsData?.value || {};
