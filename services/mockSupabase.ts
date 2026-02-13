@@ -105,9 +105,17 @@ class MockSupabaseService {
     );
   }
 
-  async createBoard(board: Omit<PinterestBoardMap, 'id'>): Promise<PinterestBoardMap> {
+  // Renamed from createBoard to match api.ts interface
+  async addBoard(board: Partial<PinterestBoardMap>): Promise<PinterestBoardMap> {
     await delay(300);
-    const newBoard = { ...board, id: `b-${Date.now()}` };
+    const newBoard: PinterestBoardMap = { 
+        id: `b-${Date.now()}`,
+        cuisine_key: board.cuisine_key || '',
+        board_slug: board.board_slug || '',
+        board_name: board.board_name || '',
+        pinterest_board_id: board.pinterest_board_id || '',
+        is_active: board.is_active ?? true
+    };
     this.boards.push(newBoard);
     return newBoard;
   }

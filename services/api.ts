@@ -1,7 +1,9 @@
-import { supabase } from './supabaseClient';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { Recipe, SocialQueueItem, PinterestBoardMap, AppSettings } from '../types';
+import { dbService } from './mockSupabase';
 
-export const api = {
+// Real Supabase Implementation
+const supabaseApi = {
   // --- RECIPES ---
   async getRecipes(): Promise<Recipe[]> {
     const { data, error } = await supabase
@@ -153,3 +155,6 @@ export const api = {
     return settings;
   }
 };
+
+// Export either real implementation or mock based on configuration
+export const api = isSupabaseConfigured ? supabaseApi : dbService;
