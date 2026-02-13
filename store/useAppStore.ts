@@ -1,7 +1,6 @@
 import { create } from 'zustand';
-import { Recipe, SocialQueueItem, PinterestBoardMap, AppSettings } from '../types';
-import { api } from '../services/api'; // Switched to real API
-import { pinService } from '../services/pinPublishingService';
+import { Recipe, SocialQueueItem, PinterestBoardMap, AppSettings, isValidPlatform } from '../types';
+import { api } from '../services/api'; 
 
 interface AppState {
   // State
@@ -70,12 +69,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Find a default board or use 'general'
       const defaultBoard = get().boards.find(b => b.cuisine_key === recipe.cuisine_type)?.board_slug || 'general';
       
+      const safePlatform = isValidPlatform(platform) ? platform : 'Pinterest';
+
       const newItem = await api.addToQueue({
         recipe_id: recipe.id,
         recipe_title: recipe.title,
         image_path: recipe.image_url,
         asset_9x16_path: recipe.image_url, // Use image_url as default asset
-        platform: platform as any,
+        platform: safePlatform,
         pin_title: recipe.title,
         pin_description: `Découvrez ce délicieux ${recipe.title}. Recette complète sur NutriZen !`,
         board_slug: defaultBoard,
@@ -135,9 +136,6 @@ export const useAppStore = create<AppState>((set, get) => ({
              locked_at: null,
              scheduled_at: new Date().toISOString() // Now
           });
-          // Note: We don't call pinService.publishPin here directly anymore because 
-          // we want the Worker/Edge Function to pick it up, 
-          // OR we use the "Force Publish" button in UI which calls the Edge Function directly.
       } catch (e: any) {
           console.error(e);
           throw e;

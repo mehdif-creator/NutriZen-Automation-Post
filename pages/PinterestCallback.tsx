@@ -14,13 +14,28 @@ const PinterestCallback: React.FC = () => {
 
   useEffect(() => {
     const handleCallback = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
-      const state = params.get('state');
+      // 1. HashRouter URL Parsing Fix
+      // URL is likely: https://domain/#/callback?code=...&state=...
+      // window.location.search is usually empty in HashRouter
+      
+      let code = new URLSearchParams(window.location.search).get('code');
+      let state = new URLSearchParams(window.location.search).get('state');
+
+      // Fallback: Check hash params
+      if (!code || !state) {
+          const hash = window.location.hash;
+          // Split hash by '?' to get query part
+          if (hash.includes('?')) {
+              const queryPart = hash.split('?')[1];
+              const hashParams = new URLSearchParams(queryPart);
+              code = code || hashParams.get('code');
+              state = state || hashParams.get('state');
+          }
+      }
 
       if (!code || !state) {
         setStatus('error');
-        setMessage('Paramètres manquants dans la réponse Pinterest.');
+        setMessage('Paramètres manquants (code/state) dans la réponse.');
         return;
       }
 

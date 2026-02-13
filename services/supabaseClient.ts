@@ -1,28 +1,36 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Helper to safely access env vars in various environments (Vite, CRA, Browser)
-const getEnv = (key: string) => {
+// Helper to safely access env vars, prioritizing Vite
+const getEnv = (key: string, viteKey: string) => {
   try {
-    // Check process.env (Create React App, Node)
+    // 1. Vite (import.meta.env) - Primary
     // @ts-ignore
-    if (typeof process !== 'undefined' && process.env) {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[viteKey]) {
+      // @ts-ignore
+      return import.meta.env[viteKey];
+    }
+    
+    // 2. CRA / Node (process.env) - Fallback
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
       // @ts-ignore
       return process.env[key];
     }
-    // Check import.meta.env (Vite)
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-      // @ts-ignore
-      return import.meta.env[key];
-    }
   } catch (e) {
-    // Ignore errors
+    // Ignore access errors
   }
   return undefined;
 };
 
-// Use fallbacks to prevent "supabaseUrl is required" crash
-const supabaseUrl = getEnv('REACT_APP_SUPABASE_URL') || 'https://placeholder.supabase.co';
-const supabaseKey = getEnv('REACT_APP_SUPABASE_ANON_KEY') || 'placeholder-key';
+const supabaseUrl = getEnv('REACT_APP_SUPABASE_URL', 'VITE_SUPABASE_URL');
+const supabaseKey = getEnv('REACT_APP_SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY');
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+if (!supabaseUrl || !supabaseKey) {
+  console.error("Supabase Environment Variables missing! Check .env file (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY).");
+}
+
+// Fallback to placeholder only to prevent immediate crash, app will likely fail on network requests
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co', 
+  supabaseKey || 'placeholder-key'
+);

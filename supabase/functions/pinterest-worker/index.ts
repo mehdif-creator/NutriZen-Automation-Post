@@ -3,9 +3,20 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 declare const Deno: any;
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  const internalSecret = Deno.env.get('INTERNAL_SERVICE_KEY') || '' // Must be set in Secrets
   
   const supabase = createClient(supabaseUrl, supabaseKey)
 
@@ -15,7 +26,7 @@ serve(async (req) => {
     
     if (error) throw error
     if (!jobs || jobs.length === 0) {
-        return new Response(JSON.stringify({ message: "No jobs to process" }), { headers: { 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ message: "No jobs to process" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     const results = []
@@ -25,13 +36,12 @@ serve(async (req) => {
         try {
             console.log(`Processing Job ${job.id}...`)
             
-            // We invoke the publish function using the Service Role Key.
-            // This ensures we can update the DB even if the publish function fails internally.
+            // Securely call publish function using Internal Secret
             const response = await fetch(`${supabaseUrl}/functions/v1/pinterest-publish`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${supabaseKey}`, // Passing Service Role to bypass Admin check if logic allows
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'x-internal-secret': internalSecret // Authenticate as worker
                 },
                 body: JSON.stringify({ queue_id: job.id })
             })
@@ -46,8 +56,8 @@ serve(async (req) => {
                     .update({ 
                         status: 'failed', 
                         publish_error: resJson.error || 'Unknown error',
-                        // If it's a config error, maybe don't unlock immediately or set a long backoff?
-                        // For now, simple fail.
+                        // Clear lock only if we want immediate retry, otherwise leave it or set null to allow retry later
+                        locked_at: null 
                     })
                     .eq('id', job.id)
                 
@@ -63,14 +73,14 @@ serve(async (req) => {
             console.error(`Worker execution failed for ${job.id}`, e)
             await supabase
                 .from('social_queue')
-                .update({ status: 'failed', publish_error: e.message })
+                .update({ status: 'failed', publish_error: e.message, locked_at: null })
                 .eq('id', job.id)
         }
     }
 
-    return new Response(JSON.stringify({ processed: results.length, details: results }), { headers: { 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ processed: results.length, details: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })

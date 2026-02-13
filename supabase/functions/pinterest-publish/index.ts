@@ -5,7 +5,7 @@ declare const Deno: any;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-internal-secret',
 }
 
 serve(async (req) => {
@@ -15,38 +15,42 @@ serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const internalServiceKey = Deno.env.get('INTERNAL_SERVICE_KEY')
     const appBaseUrl = Deno.env.get('APP_BASE_URL') || 'https://mynutrizen.fr'
     
-    // 1. Auth Check
-    // We create a client with the incoming Authorization header to check user roles
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-        throw new Error('Missing Authorization header')
+    const internalSecretHeader = req.headers.get('x-internal-secret')
+
+    let isAuthorized = false;
+
+    // AUTH STRATEGY:
+    // 1. Internal Worker: Check strict equality of x-internal-secret against env var
+    if (internalServiceKey && internalSecretHeader === internalServiceKey) {
+        isAuthorized = true;
+    } 
+    // 2. Admin User: Check valid JWT and is_admin() role
+    else if (authHeader) {
+        const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
+            global: { headers: { Authorization: authHeader } }
+        })
+        const { data: { user }, error: userError } = await userClient.auth.getUser()
+        
+        if (!userError && user) {
+             const { data: isAdmin } = await userClient.rpc('is_admin', { uid: user.id })
+             if (isAdmin) isAuthorized = true;
+        }
     }
 
-    const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
-        global: { headers: { Authorization: authHeader } }
-    })
-    
-    const { data: { user }, error: userError } = await userClient.auth.getUser()
-    if (userError || !user) throw new Error('Unauthorized')
-
-    // Admin Role Check
-    const { data: isAdmin } = await userClient.rpc('is_admin', { uid: user.id })
-    // Allow Service Role (Worker) to bypass specific admin user check, but here we expect user or service role
-    // If called from Worker, we might be using Service Role directly.
-    const isServiceRole = authHeader.includes(supabaseKey) // Simple check if key is service role
-    
-    if (!isAdmin && !isServiceRole) {
+    if (!isAuthorized) {
          return new Response(
-            JSON.stringify({ error: "Forbidden: Admin access required" }),
+            JSON.stringify({ error: "Forbidden: Invalid credentials" }),
             { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
     }
 
-    // 2. Initialize Service Client for DB Ops
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    // Initialize Service Client for DB Ops (Read tokens, update queue)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     const { queue_id } = await req.json()
     if (!queue_id) throw new Error("Missing queue_id")
@@ -78,7 +82,6 @@ serve(async (req) => {
         .eq('board_slug', item.board_slug)
         .single()
     
-    // Fallback or Error if no board mapped
     const pinterestBoardId = boardMap?.pinterest_board_id
     if (!pinterestBoardId) {
          throw new Error(`No mapped Pinterest Board ID found for slug: ${item.board_slug}`)
@@ -131,9 +134,6 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    // Attempt to log error to the item if possible (if we have queue_id context)
-    // But since this is a general catch, we primarily return 400
-    // The Worker will handle the update to 'failed' if this returns error.
     return new Response(
       JSON.stringify({ error: error.message, code: error.message.includes("NOT_CONFIGURED") ? "PINTEREST_NOT_CONFIGURED" : "ERROR" }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

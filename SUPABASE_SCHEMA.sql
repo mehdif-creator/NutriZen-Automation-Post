@@ -3,6 +3,7 @@ create or replace function public.is_admin(uid uuid)
 returns boolean
 language sql
 security definer
+set search_path = public
 as $$
   select exists (
     select 1
@@ -12,16 +13,51 @@ as $$
   );
 $$;
 
--- 2. OAuth States table (CSRF Protection)
+-- 2. OAuth States table (CSRF Protection) - SECURED
 create table if not exists public.oauth_states (
   state text primary key,
   created_at timestamptz not null default now()
 );
--- Clean up old states automatically (optional, usually handled by worker or TTL)
+
 alter table public.oauth_states enable row level security;
-create policy "Public insert oauth_states" on public.oauth_states for insert with check (true);
-create policy "Public select oauth_states" on public.oauth_states for select using (true);
-create policy "Public delete oauth_states" on public.oauth_states for delete using (true);
+
+-- DROP INSECURE POLICIES IF THEY EXIST
+drop policy if exists "Public insert oauth_states" on public.oauth_states;
+drop policy if exists "Public select oauth_states" on public.oauth_states;
+drop policy if exists "Public delete oauth_states" on public.oauth_states;
+
+-- STRICT POLICY: Effectively denies all external access.
+-- Only the service_role (used by Edge Functions) can bypass this.
+create policy "Deny all external access" on public.oauth_states
+  for all
+  using (false)
+  with check (false);
+
+-- CLEANUP FUNCTION
+create or replace function public.cleanup_expired_oauth_states()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Delete states older than 20 minutes
+  delete from public.oauth_states
+  where created_at < (now() - interval '20 minutes');
+end;
+$$;
+
+-- ATTEMPT TO SCHEDULE CRON (Requires pg_cron extension)
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('cleanup-oauth-states', '*/15 * * * *', 'select public.cleanup_expired_oauth_states()');
+  end if;
+exception when others then
+  -- Ignore if pg_cron is not available or permission denied
+  raise notice 'pg_cron not available or permission denied, skipping schedule.';
+end
+$$;
 
 -- 3. Pinterest OAuth Tokens table (Admin Only)
 create table if not exists public.pinterest_oauth (
@@ -51,7 +87,7 @@ create policy "Admin only social_queue" on public.social_queue
 alter table public.pinterest_board_map enable row level security;
 create policy "Admin only pinterest_board_map" on public.pinterest_board_map
   for all
-  using (public.is_admin(auth.uid()))
+  using (public.is_admin(auth.uid())) 
   with check (public.is_admin(auth.uid()));
 
 -- 6. Indexes for Performance
