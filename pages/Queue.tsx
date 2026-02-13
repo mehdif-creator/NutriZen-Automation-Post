@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useToast } from '../components/Toast';
-import { Filter, Calendar, ExternalLink, RefreshCw, Trash2, Edit, Loader2 } from 'lucide-react';
+import { Filter, Calendar, ExternalLink, RefreshCw, Trash2, Edit, Loader2, Play } from 'lucide-react';
 import { SocialQueueItem } from '../types';
 import Modal from '../components/Modal';
+import { supabase } from '../services/supabaseClient';
 
 const Queue: React.FC = () => {
-  const { queue, removeFromQueue, retryPublishItem, updateQueueItem } = useAppStore();
+  const { queue, removeFromQueue, updateQueueItem, fetchInitialData } = useAppStore();
   const { addToast } = useToast();
   
   const [filter, setFilter] = useState<string>('all');
@@ -17,12 +18,49 @@ const Queue: React.FC = () => {
   const [itemToEdit, setItemToEdit] = useState<SocialQueueItem | null>(null);
 
   const handleRetry = async (item: SocialQueueItem) => {
+    // Retry logic: Reset status to 'rendered', clear locks/errors
+    try {
+        await updateQueueItem(item.id, {
+            status: 'rendered',
+            error_message: undefined,
+            publish_error: undefined,
+            locked_at: undefined,
+            scheduled_at: new Date().toISOString() // Retry now
+        });
+        addToast("Élément remis en file d'attente (Status: Rendered)", "success");
+    } catch (e) {
+        addToast("Erreur lors de la réinitialisation", "error");
+    }
+  };
+
+  const handleForcePublish = async (item: SocialQueueItem) => {
     setProcessingId(item.id);
     try {
-        await retryPublishItem(item.id);
+        addToast("Lancement de la publication forcée...", "info");
+        const { error } = await supabase.functions.invoke('pinterest-publish', {
+            body: { queue_id: item.id }
+        });
+
+        if (error) {
+            const body = await error.context?.json().catch(() => ({}));
+            if (body?.code === 'PINTEREST_NOT_CONFIGURED') {
+                addToast("Mode Stub: Secrets manquants, publication simulée impossible.", "error");
+                // Optionally log this specific error to the item so the user sees it in the table
+                await updateQueueItem(item.id, { 
+                    status: 'failed', 
+                    publish_error: 'Mode Stub: Secrets Pinterest non configurés.' 
+                });
+                return;
+            }
+            throw error;
+        }
+        
         addToast("Publication réussie !", "success");
+        await fetchInitialData(); // Refresh list to see 'posted'
     } catch (error: any) {
-        addToast(`Erreur de publication: ${error.message}`, "error");
+        console.error(error);
+        addToast(`Erreur de publication: ${error.message || 'Erreur serveur'}`, "error");
+        await fetchInitialData(); // Refresh list to see 'failed'
     } finally {
         setProcessingId(null);
     }
@@ -66,7 +104,10 @@ const Queue: React.FC = () => {
         case 'posted': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
         case 'scheduled': return 'bg-blue-100 text-blue-800 border-blue-200';
         case 'pending': return 'bg-amber-100 text-amber-800 border-amber-200';
-        case 'error': return 'bg-red-100 text-red-800 border-red-200';
+        case 'rendered': return 'bg-purple-100 text-purple-800 border-purple-200';
+        case 'processing': return 'bg-indigo-100 text-indigo-800 border-indigo-200 animate-pulse';
+        case 'error': 
+        case 'failed': return 'bg-red-100 text-red-800 border-red-200';
         default: return 'bg-slate-100 text-slate-800 border-slate-200';
     }
   };
@@ -75,15 +116,13 @@ const Queue: React.FC = () => {
     switch(status) {
         case 'posted': return 'Publié';
         case 'scheduled': return 'Planifié';
-        case 'pending': return 'En attente';
-        case 'error': return 'Erreur';
+        case 'pending': return 'Brouillon';
+        case 'rendered': return 'Prêt';
+        case 'processing': return 'En cours';
+        case 'error': 
+        case 'failed': return 'Échec';
         default: return status;
     }
-  };
-
-  const getFilterLabel = (f: string) => {
-     if (f === 'all') return 'Tous';
-     return getStatusLabel(f);
   };
 
   return (
@@ -93,16 +132,16 @@ const Queue: React.FC = () => {
            <h1 className="text-2xl font-bold text-slate-900">File d'attente</h1>
            <p className="text-slate-500">Gérez, planifiez et surveillez vos pins automatisés.</p>
         </div>
-        <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
-            {['all', 'pending', 'scheduled', 'posted', 'error'].map(f => (
+        <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm overflow-x-auto max-w-full">
+            {['all', 'rendered', 'scheduled', 'processing', 'posted', 'failed'].map(f => (
                 <button 
                     key={f}
                     onClick={() => setFilter(f)}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium capitalize transition-colors ${
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium capitalize transition-colors whitespace-nowrap ${
                         filter === f ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'
                     }`}
                 >
-                    {getFilterLabel(f)}
+                    {getStatusLabel(f)}
                 </button>
             ))}
         </div>
@@ -114,8 +153,8 @@ const Queue: React.FC = () => {
                 <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500 font-semibold">
                         <th className="px-6 py-4">Contenu</th>
-                        <th className="px-6 py-4">Tableau & Données</th>
                         <th className="px-6 py-4">Statut</th>
+                        <th className="px-6 py-4">Tentatives</th>
                         <th className="px-6 py-4">Programmation</th>
                         <th className="px-6 py-4 text-right">Actions</th>
                     </tr>
@@ -126,11 +165,11 @@ const Queue: React.FC = () => {
                             <td className="px-6 py-4">
                                 <div className="flex items-center gap-4">
                                     <div className="h-16 w-12 flex-shrink-0 rounded-md bg-slate-100 overflow-hidden border border-slate-200">
-                                        <img src={item.image_path} alt={item.pin_title} className="h-full w-full object-cover" />
+                                        <img src={item.image_path || item.asset_9x16_path || item.asset_4x5_path} alt={item.pin_title} className="h-full w-full object-cover" />
                                     </div>
                                     <div>
                                         <p className="text-sm font-medium text-slate-900">{item.pin_title}</p>
-                                        <p className="text-xs text-slate-500 mt-1 line-clamp-1">{item.pin_description}</p>
+                                        <p className="text-xs text-slate-500 mt-1 line-clamp-1">Board: {item.board_slug}</p>
                                         <div className="flex items-center gap-2 mt-2">
                                             <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200">
                                                 {item.platform}
@@ -140,20 +179,17 @@ const Queue: React.FC = () => {
                                 </div>
                             </td>
                             <td className="px-6 py-4">
-                                <div className="space-y-1">
-                                    <p className="text-xs font-medium text-slate-700">Tableau: <span className="text-emerald-600">{item.board_slug}</span></p>
-                                    <p className="text-xs text-slate-500 truncate max-w-[200px]" title={item.destination_url}>
-                                        {item.destination_url.replace('https://nutrizen.app', '...')}
-                                    </p>
-                                </div>
-                            </td>
-                            <td className="px-6 py-4">
                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>
                                     {getStatusLabel(item.status)}
                                 </span>
-                                {item.error_message && (
-                                    <p className="text-xs text-red-500 mt-1 max-w-[150px]">{item.error_message}</p>
+                                {(item.error_message || item.publish_error) && (
+                                    <p className="text-xs text-red-500 mt-1 max-w-[200px] break-words">
+                                        {item.publish_error || item.error_message}
+                                    </p>
                                 )}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-slate-600">
+                                {item.attempts}
                             </td>
                             <td className="px-6 py-4 text-sm text-slate-600">
                                 <div className="flex items-center gap-2">
@@ -174,17 +210,26 @@ const Queue: React.FC = () => {
                                         <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
                                     ) : (
                                         <>
-                                            {item.status === 'error' && (
+                                            {['failed', 'error', 'rendered'].includes(item.status) && (
+                                                <button 
+                                                    onClick={() => handleForcePublish(item)}
+                                                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                                                    title="Publier maintenant (Force)"
+                                                >
+                                                    <Play className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                            {['failed', 'error'].includes(item.status) && (
                                                 <button 
                                                     onClick={() => handleRetry(item)}
                                                     className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
-                                                    title="Réessayer"
+                                                    title="Réinitialiser (Retry)"
                                                 >
                                                     <RefreshCw className="w-4 h-4" />
                                                 </button>
                                             )}
-                                            {item.status === 'posted' && (
-                                                <a href="#" className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors" title="Voir sur Pinterest">
+                                            {item.status === 'posted' && item.external_post_url && (
+                                                <a href={item.external_post_url} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors" title="Voir sur Pinterest">
                                                     <ExternalLink className="w-4 h-4" />
                                                 </a>
                                             )}
@@ -210,16 +255,6 @@ const Queue: React.FC = () => {
                     ))}
                 </tbody>
             </table>
-            
-            {filteredItems.length === 0 && (
-                <div className="p-12 text-center">
-                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Filter className="w-8 h-8 text-slate-300" />
-                    </div>
-                    <h3 className="text-slate-900 font-medium">Aucun élément trouvé</h3>
-                    <p className="text-slate-500 text-sm mt-1">Essayez de changer le filtre ou ajoutez du contenu.</p>
-                </div>
-            )}
         </div>
       </div>
 
@@ -292,7 +327,7 @@ const Queue: React.FC = () => {
                 <input 
                     type="datetime-local" 
                     className="w-full rounded-md border-slate-300 shadow-sm border p-2 text-sm"
-                    value={itemToEdit?.scheduled_at?.slice(0, 16) || ''}
+                    value={itemToEdit?.scheduled_at ? new Date(itemToEdit.scheduled_at).toISOString().slice(0, 16) : ''}
                     onChange={(e) => setItemToEdit(prev => prev ? {...prev, scheduled_at: new Date(e.target.value).toISOString()} : null)}
                 />
             </div>

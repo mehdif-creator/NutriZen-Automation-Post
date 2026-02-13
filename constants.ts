@@ -69,7 +69,8 @@ export const MOCK_QUEUE: SocialQueueItem[] = [
     board_slug: 'recettes-thai',
     destination_url: 'https://nutrizen.app/recipe/thai-basil-chicken?utm_source=pinterest',
     utm_stats: { clicks: 124, impressions: 4500, saves: 32 },
-    published_at: getRelativeDate(-1, 14) // Yesterday
+    published_at: getRelativeDate(-1, 14), // Yesterday
+    attempts: 1
   },
   {
     id: 'q-2',
@@ -83,7 +84,8 @@ export const MOCK_QUEUE: SocialQueueItem[] = [
     board_slug: 'salades-sante',
     destination_url: 'https://nutrizen.app/recipe/med-quinoa?utm_source=pinterest',
     utm_stats: { clicks: 0, impressions: 0, saves: 0 },
-    scheduled_at: getRelativeDate(2, 9) // In 2 days
+    scheduled_at: getRelativeDate(2, 9), // In 2 days
+    attempts: 0
   },
   {
     id: 'q-3',
@@ -97,6 +99,7 @@ export const MOCK_QUEUE: SocialQueueItem[] = [
     board_slug: 'diner-italien',
     destination_url: 'https://nutrizen.app/recipe/mushroom-risotto?utm_source=pinterest',
     utm_stats: { clicks: 0, impressions: 0, saves: 0 },
+    attempts: 0
   },
   {
     id: 'q-5',
@@ -110,7 +113,8 @@ export const MOCK_QUEUE: SocialQueueItem[] = [
     board_slug: 'recettes-rapides',
     destination_url: 'https://nutrizen.app/recipe/thai-basil-chicken?utm_source=pinterest',
     utm_stats: { clicks: 54, impressions: 2100, saves: 10 },
-    published_at: getRelativeDate(-3, 11) // 3 days ago
+    published_at: getRelativeDate(-3, 11), // 3 days ago
+    attempts: 1
   },
   {
     id: 'q-4',
@@ -124,7 +128,8 @@ export const MOCK_QUEUE: SocialQueueItem[] = [
     board_slug: 'idees-dej',
     destination_url: 'https://nutrizen.app/recipe/avo-toast?utm_source=pinterest',
     utm_stats: { clicks: 0, impressions: 0, saves: 0 },
-    error_message: 'Limite API Dépassée'
+    error_message: 'Limite API Dépassée',
+    attempts: 3
   }
 ];
 

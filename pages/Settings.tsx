@@ -1,26 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useToast } from '../components/Toast';
-import { Save, Eye, EyeOff, Database, Globe, BarChart2, Server, Loader2 } from 'lucide-react';
+import { Save, Globe, Loader2, Share2, Check, AlertTriangle } from 'lucide-react';
 import { AppSettings } from '../types';
+import { supabase } from '../services/supabaseClient';
 
 const Settings: React.FC = () => {
   const { settings, saveSettings } = useAppStore();
   const { addToast } = useToast();
   
   const [formData, setFormData] = useState<AppSettings | null>(null);
-  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isConnectingPinterest, setIsConnectingPinterest] = useState(false);
+  const [pinterestConfigMissing, setPinterestConfigMissing] = useState(false);
 
   useEffect(() => {
     if (settings) {
         setFormData(settings);
     }
   }, [settings]);
-
-  const toggleSecret = (key: string) => {
-    setShowSecrets(prev => ({ ...prev, [key]: !prev[key] }));
-  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
@@ -38,6 +36,49 @@ const Settings: React.FC = () => {
       } finally {
         setIsSaving(false);
       }
+  };
+
+  const handleConnectPinterest = async () => {
+    setIsConnectingPinterest(true);
+    setPinterestConfigMissing(false);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('pinterest-oauth-start', {
+        method: 'GET'
+      });
+      
+      // Handle the Stub Mode / Not Configured error specifically
+      if (error) {
+          try {
+             // Attempt to parse the body if it exists in the error context
+             const body = await error.context?.json(); 
+             if (body && body.code === 'PINTEREST_NOT_CONFIGURED') {
+                 setPinterestConfigMissing(true);
+                 addToast("Configuration Pinterest manquante", "error");
+                 return;
+             }
+          } catch (parseError) {
+              // Ignore parse error, proceed to standard error throw
+          }
+          throw error;
+      }
+      
+      if (data?.auth_url) {
+        window.location.href = data.auth_url;
+      } else {
+        throw new Error("Pas d'URL d'authentification reçue");
+      }
+    } catch (e: any) {
+      console.error(e);
+      // Fallback check if the body parsing above failed but message contains hint
+      if (e.message?.includes('PINTEREST_NOT_CONFIGURED')) {
+         setPinterestConfigMissing(true);
+      } else {
+         addToast(`Erreur connexion: ${e.message}`, "error");
+      }
+    } finally {
+      setIsConnectingPinterest(false);
+    }
   };
 
   const resetForm = () => {
@@ -92,51 +133,7 @@ const Settings: React.FC = () => {
         </div>
       </section>
 
-      {/* Supabase Settings */}
-      <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <Database className="w-5 h-5 text-emerald-600" />
-            Supabase
-          </h2>
-          <span className="text-xs font-medium bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">Connecté</span>
-        </div>
-        <div className="p-6 space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">URL du Projet</label>
-            <input 
-              type="text" 
-              name="supabaseUrl"
-              value={formData.supabaseUrl}
-              onChange={handleChange}
-              placeholder="https://xyzproject.supabase.co" 
-              className="w-full rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm py-2 px-3 border"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Clé API (Service Role)</label>
-            <div className="relative">
-              <input 
-                type={showSecrets['supabase'] ? "text" : "password"} 
-                name="supabaseKey"
-                value={formData.supabaseKey}
-                onChange={handleChange}
-                placeholder="eyJhGcioJiu..." 
-                className="w-full rounded-lg border-slate-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm py-2 px-3 border pr-10"
-              />
-              <button 
-                onClick={() => toggleSecret('supabase')}
-                className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-600"
-              >
-                {showSecrets['supabase'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">Utilisée pour les tâches de fond. Ne partagez jamais cette clé.</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Pinterest Settings */}
+      {/* Pinterest API Settings */}
       <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-6 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
           <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
@@ -145,137 +142,47 @@ const Settings: React.FC = () => {
             </svg>
             Pinterest API
           </h2>
-          <button className="text-sm font-medium bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors shadow-sm">
-            Reconnecter OAuth
-          </button>
-        </div>
-        <div className="p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">App ID</label>
-              <input 
-                type="text" 
-                name="pinterestAppId"
-                value={formData.pinterestAppId}
-                onChange={handleChange}
-                placeholder="12345678" 
-                className="w-full rounded-lg border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm py-2 px-3 border"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">App Secret</label>
-              <div className="relative">
-                <input 
-                  type={showSecrets['pinterest'] ? "text" : "password"} 
-                  name="pinterestAppSecret"
-                  value={formData.pinterestAppSecret}
-                  onChange={handleChange}
-                  placeholder="secret..." 
-                  className="w-full rounded-lg border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm py-2 px-3 border pr-10"
-                />
-                <button 
-                  onClick={() => toggleSecret('pinterest')}
-                  className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-600"
-                >
-                  {showSecrets['pinterest'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Token d'accès (Lecture Seule)</label>
-            <div className="flex gap-2">
-                <input 
-                type="text" 
-                readOnly
-                value={formData.pinterestToken || "Non connecté"} 
-                className="flex-1 rounded-lg border-slate-200 bg-slate-50 text-slate-500 shadow-sm sm:text-sm py-2 px-3 border"
-                />
-                 <span className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-medium ${formData.pinterestToken ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-500'}`}>
-                    {formData.pinterestToken ? 'Valide' : 'Invalide'}
-                 </span>
-            </div>
+          <div className="flex items-center gap-2">
+            {formData.pinterestConnected ? (
+              <span className="flex items-center gap-1 text-sm font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                <Check className="w-3 h-3" /> Connecté
+              </span>
+            ) : (
+              <button 
+                onClick={handleConnectPinterest}
+                disabled={isConnectingPinterest}
+                className="text-sm font-medium bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors shadow-sm flex items-center gap-2"
+              >
+                {isConnectingPinterest ? <Loader2 className="w-3 h-3 animate-spin" /> : <Share2 className="w-3 h-3" />}
+                Connecter OAuth
+              </button>
+            )}
           </div>
         </div>
-      </section>
-
-      {/* Cloudinary Settings */}
-      <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-         <div className="p-6 border-b border-slate-200 bg-slate-50/50">
-          <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <Server className="w-5 h-5 text-blue-600" />
-            Stockage (Cloudinary)
-          </h2>
-        </div>
-        <div className="p-6 space-y-6">
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Cloud Name</label>
-                    <input 
-                        type="text" 
-                        name="cloudinaryName"
-                        value={formData.cloudinaryName}
-                        onChange={handleChange}
-                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3 border" 
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
-                    <input 
-                        type="text" 
-                        name="cloudinaryKey"
-                        value={formData.cloudinaryKey}
-                        onChange={handleChange}
-                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3 border" 
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">API Secret</label>
-                    <input 
-                        type="password" 
-                        name="cloudinarySecret"
-                        value={formData.cloudinarySecret}
-                        onChange={handleChange}
-                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3 border" 
-                    />
-                </div>
-             </div>
-        </div>
-      </section>
-
-      {/* Analytics Settings */}
-      <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-200 bg-slate-50/50">
-          <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <BarChart2 className="w-5 h-5 text-purple-600" />
-            Tracking & Analytics
-          </h2>
-        </div>
-        <div className="p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Google Analytics ID</label>
-                    <input 
-                        type="text" 
-                        name="googleAnalyticsId"
-                        value={formData.googleAnalyticsId}
-                        onChange={handleChange}
-                        placeholder="G-XXXXXXXXXX" 
-                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm py-2 px-3 border" 
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">UTM Source (Défaut)</label>
-                    <input 
-                        type="text" 
-                        name="defaultUtmSource"
-                        value={formData.defaultUtmSource}
-                        onChange={handleChange}
-                        defaultValue="pinterest" 
-                        className="w-full rounded-lg border-slate-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm py-2 px-3 border" 
-                    />
+        
+        {/* Stub Mode Banner */}
+        {pinterestConfigMissing && (
+            <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mx-6 mt-6">
+                <div className="flex">
+                    <div className="flex-shrink-0">
+                        <AlertTriangle className="h-5 w-5 text-amber-400" aria-hidden="true" />
+                    </div>
+                    <div className="ml-3">
+                        <p className="text-sm text-amber-700">
+                            <strong>App Pinterest en attente de validation.</strong>
+                            <br/>
+                            L'application est en mode "Stub". Veuillez configurer les secrets <code>PINTEREST_CLIENT_ID</code> et <code>PINTEREST_CLIENT_SECRET</code> dans vos Supabase Edge Functions une fois l'approbation reçue.
+                        </p>
+                    </div>
                 </div>
             </div>
+        )}
+
+        <div className="p-6 space-y-6">
+           <p className="text-sm text-slate-500">
+             Pour activer la publication automatique, vous devez connecter un compte Pinterest Business.
+             Le système utilisera ce compte pour créer des épingles sur vos tableaux configurés.
+           </p>
         </div>
       </section>
 

@@ -5,7 +5,7 @@ export function isValidPlatform(p: string): p is Platform {
   return PLATFORMS.includes(p as Platform);
 }
 
-export type QueueStatus = 'pending' | 'rendered' | 'scheduled' | 'posted' | 'error';
+export type QueueStatus = 'pending' | 'rendered' | 'processing' | 'posted' | 'failed' | 'scheduled' | 'error';
 
 export interface Recipe {
   id: string;
@@ -28,6 +28,16 @@ export interface SocialQueueItem {
   pin_description: string;
   board_slug: string;
   destination_url: string;
+  
+  // Specific Automation Fields
+  asset_9x16_path?: string;
+  asset_4x5_path?: string;
+  external_post_id?: string;
+  external_post_url?: string;
+  publish_error?: string;
+  attempts: number;
+  locked_at?: string;
+
   utm_stats: {
     clicks: number;
     impressions: number;
@@ -35,7 +45,7 @@ export interface SocialQueueItem {
   };
   scheduled_at?: string;
   published_at?: string;
-  error_message?: string;
+  error_message?: string; // Legacy field, prefer publish_error
 }
 
 export interface PinterestBoardMap {
@@ -69,4 +79,6 @@ export interface AppSettings {
   cloudinarySecret: string;
   googleAnalyticsId: string;
   defaultUtmSource: string;
+  pinterestConnected?: boolean;
+  pinterestTokenExpiresAt?: string;
 }
